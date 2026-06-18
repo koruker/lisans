@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Fanuc Macro B Simülatör - Torna & Freze</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js">
+    </script>
+    <style>
+        :root {
+            --orange: #e67e22;
+            --green: #00ff88;
+            --bg: #1a1a1a;
+            --panel: #2c3e50;
+            --keypad: #1a252f;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a1a;
+            color: #ecf0f1;
+            font-family: 'Courier New', monospace;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #portrait-warning {
+            display: flex;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            text-align: center;
+            padding: 20px;
+        }
+        #portrait-warning .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+        }
+        #portrait-warning h1 {
+            font-size: 22px;
+            color: #e74c3c;
+            margin-bottom: 10px;
+        }
+        #app {
+            display: none;
+            width: 100%;
+            height: 100%;
+        }
+        #sim-area {
+            width: 70%;
+            height: 100%;
+            float: left;
+            position: relative;
+            background: radial-gradient(circle at center, #1a1a2e 0%, #0a0a0a 100%);
+        }
+        #overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid var(--orange);
+            z-index: 10;
+            font-size: 12px;
+        }
+        #pos-display {
+            color: var(--green);
+            font-weight: bold;
+            font-size: 14px;
+        }
+        #panel {
+            width: 30%;
+            height: 100%;
+            float: right;
+            background: linear-gradient(180deg, #2c3e50 0%, #1a252f 100%);
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+            gap: 6px;
+            border-left: 2px solid var(--orange);
+            overflow-y: auto;
+        }
+        .mode-row {
+            display: flex;
+            gap: 4px;
+        }
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #34495e;
+            background: #1a252f;
+            color: #95a5a6;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+        .mode-btn.active {
+            background: var(--orange);
+            color: #fff;
+            border-color: var(--orange);
+            box-shadow: 0 0 15px rgba(230, 126, 34, 0.4);
+        }
+        #keypad {
+            background: var(--keypad);
+            border-radius: 6px;
+            padding: 6px;
+            border: 1px solid #34495e;
+        }
+        .krow {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 3px;
+        }
+        .key {
+            flex: 1;
+            padding: 7px 3px;
+            background: #34495e;
+            border: 1px solid #1a252f;
+            color: #fff;
+            border-radius: 3px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 10px;
+            text-align: center;
+            transition: all 0.1s;
+            font-family: 'Courier New', monospace;
+        }
+        .key:active {
+            background: #5dade2;
+            transform: scale(0.95);
+        }
+        .key.addr {
+            background: var(--orange);
+        }
+        .key.macro {
+            background: #8e44ad;
+            font-size: 8px;
+        }
+        .key.func {
+            background: #2980b9;
+            font-size: 8px;
+        }
+        #editor-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-height: 0;
+        }
+        #editor {
+            flex: 1;
+            background: #0a0a0a;
+            color: var(--green);
+            border: 2px solid #34495e;
+            border-radius: 5px;
+            padding: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            resize: none;
+            min-height: 130px;
+        }
+        #editor:focus {
+            border-color: var(--orange);
+            outline: none;
+        }
+        .btns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+        .btn {
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+            color: #fff;
+            transition: all 0.2s;
+            font-family: 'Courier New', monospace;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+        #btn-load {
+            background: #2980b9;
+            grid-column: 1/-1;
+        }
+        #btn-run {
+            background: #27ae60;
+            box-shadow: 0 3px 0 #1e8449;
+        }
+        #btn-stop {
+            background: #c0392b;
+            box-shadow: 0 3px 0 #922b21;
+        }
+        #btn-reset {
+            background: #7f8c8d;
+            grid-column: 1/-1;
+            font-size: 10px;
+            padding: 7px;
+        }
+        #status-bar {
+            background: #0a0a0a;
+            padding: 5px 8px;
+            border-radius: 3px;
+            font-size: 9px;
+            color: var(--orange);
+            border: 1px solid #333;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        @media screen and (max-width: 900px) and (orientation: landscape) {
+            #sim-area {
+                width: 60%;
+            }
+            #panel {
+                width: 40%;
+            }
+            .key {
+                padding: 5px 2px;
+                font-size: 8px;
+            }
+            .key.macro,
+            .key.func {
+                font-size: 6px;
+            }
+            #editor {
+                font-size: 9px;
+                min-height: 90px;
+            }
+        }
+        @media screen and (orientation: portrait) {
+            #portrait-warning {
+                display: flex;
+            }
+            #app {
+                display: none !important;
+            }
+        }
+        @media screen and (orientation: landscape) {
+            #portrait-warning {
+                display: none;
+            }
+            #app {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="portrait-warning">
+        <div class="icon">📱</div>
+        <h1>LÜTFEN CİHAZI YAN ÇEVİRİN</h1>
+        <p>Bu uygulama sadece yatay modda çalışır</p>
+    </div>
+
+    <div id="app">
+        <div id="sim-area">
+            <div id="overlay">
+                <span id="pos-display">X:0.000 Y:0.000 Z:0.000</span><br>
+                <span style="color:#e67e22;font-size:10px;" id="active-gcode">G54 G17 G90</span>
+            </div>
+        </div>
+        <div id="panel">
+            <div class="mode-row">
+                <button class="mode-btn active" data-mode="mill">🔧 FREZE</button>
+                <button class="mode-btn" data-mode="lathe">⚙️ TORNA</button>
+            </div>
+            <div id="keypad"></div>
+            <div id="editor-wrap">
+                <textarea id="editor">O1234
+G17 G21 G54 G90
+S1000 M3
+#100=0
+#101=10
+WHILE[#100 LT 360]DO1
+#102=#101*COS[#100]
+#103=#101*SIN[#100]
+G01 X#102 Y#103 F500
+#100=#100+15
+END1
+G00 Z10
+M30</textarea>
+                <div class="btns">
+                    <button class="btn" id="btn-load">📂 DOSYA YÜKLE</button>
+                    <button class="btn" id="btn-run">▶ CYCLE START</button>
+                    <button class="btn" id="btn-stop">⏹ STOP</button>
+                    <button class="btn" id="btn-reset">⚠ RESET</button>
+                </div>
+                <div id="status-bar">
+                    <span>Durum: <b id="st">Hazır</b></span>
+                    <span>Satır: <b id="sl">0</b></span>
+                    <span>Makro: <b id="sv">-</b></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <input type="file" id="file-up" accept=".nc,.cnc,.txt,.gcode" style="display:none;">
+
+    <script>
+        // ============ FANUC SIMULATOR - TEK DOSYA ============
+
+        // Event Bus
+        class EventBus {
+            constructor() { this.events = {}; }
+            on(e, cb) {
+                if (!this.events[e]) this.events[e] = [];
+                this.events[e].push(cb);
+                return () => this.off(e, cb);
+            }
+            off(e, cb) { if (this.events[e]) this.events[e] = this.events[e].filter(c => c !== cb); }
+            emit(e, d) { if (this.events[e]) this.events[e].forEach(c => c(d)); }
+        }
+        const bus = new EventBus();
+
+        // Variable Manager
+        class VarMgr {
+            constructor() { this.vars = {}; }
+            get(n) { return this.vars['#' + n] !== undefined ? this.vars['#' + n] : 0; }
+            set(n, v) { this.vars['#' + n] = parseFloat(v) || 0;
+                bus.emit('var-change', { v: '#' + n, val: this.vars['#' + n] }); }
+            all() { return { ...this.vars }; }
+            reset() { this.vars = {}; }
+        }
+        const vars = new VarMgr();
+
+        // Expression Engine
+        function evaluate(expr) {
+            if (typeof expr === 'number') return expr;
+            let s = String(expr).trim();
+            if (!s) return 0;
+            s = s.replace(/#(\d+)/g, (m, n) => vars.get(n));
+            s = s.replace(/\[([^\]]+)\]/g, (m, e) => evaluate(e));
+            s = s.replace(/(SIN|COS|TAN|SQRT|ABS|FIX|FUP|ROUND)\[([^\]]+)\]/gi, (m, f, a) => {
+                const v = parseFloat(a);
+                switch (f.toUpperCase()) {
+                    case 'SIN':
+                        return Math.sin(v * Math.PI / 180).toFixed(6);
+                    case 'COS':
+                        return Math.cos(v * Math.PI / 180).toFixed(6);
+                    case 'TAN':
+                        return Math.tan(v * Math.PI / 180).toFixed(6);
+                    case 'SQRT':
+                        return Math.sqrt(Math.abs(v)).toFixed(6);
+                    case 'ABS':
+                        return Math.abs(v).toFixed(6);
+                    case 'FIX':
+                        return Math.floor(v).toFixed(6);
+                    case 'FUP':
+                        return Math.ceil(v).toFixed(6);
+                    case 'ROUND':
+                        return Math.round(v).toFixed(6);
+                    default:
+                        return v;
+                }
+            });
+            s = s.replace(/\bEQ\b/gi, '==').replace(/\bNE\b/gi, '!=').replace(/\bGE\b/gi, '>=');
+            s = s.replace(/\bLE\b/gi, '<=').replace(/\bGT\b/gi, '>').replace(/\bLT\b/gi, '<');
+            s = s.replace(/\bAND\b/gi, '&&').replace(/\bOR\b/gi, '||').replace(/\bMOD\b/gi, '%');
+            try { return Function('"use strict";return(' + s + ')')(); } catch (e) { return 0; }
+        }
+
+        // Parser
+        class Parser {
+            constructor() {
+                this.pos = { X: 0, Y: 0, Z: 0 };
+                this.path = [];
+                this.lines = [];
+                this.bmap = {};
+                this.abs = true;
+            }
+            parse(text) {
+                this.pos = { X: 0, Y: 0, Z: 0 };
+                this.path = [
+                    [0, 0, 0]
+                ];
+                this.lines = [];
+                this.bmap = {};
+                this.abs = true;
+                const raw = text.toUpperCase().split('\n');
+                for (let i = 0; i < raw.length; i++) {
+                    let l = raw[i].trim();
+                    if (!l || l.startsWith('(') || l.startsWith(';')) continue;
+                    l = l.replace(/^\//, '');
+                    const m = l.match(/^(N\d+|O\d+)/);
+                    const id = m ? m[0] : 'L' + this.lines.length;
+                    this.bmap[id] = this.lines.length;
+                    this.lines.push({ t: l, id });
+                }
+                this._run();
+                return this.path;
+            }
+            _run() {
+                let pc = 0;
+                const stack = [];
+                while (pc < this.lines.length) {
+                    let l = this._pre(this.lines[pc].t);
+                    if (!l || !l.trim()) { pc++; continue; }
+                    const wm = l.match(/WHILE\s*\[(.*?)\]\s*DO(\d+)/);
+                    if (wm) {
+                        if (evaluate(wm[1])) {
+                            stack.push({ n: parseInt(wm[2]), s: pc, c: wm[1] });
+                        } else {
+                            pc = this._skip(pc, parseInt(wm[2]));
+                        }
+                        pc++; continue;
+                    }
+                    const em = l.match(/^END(\d+)/);
+                    if (em && stack.length) {
+                        const lo = stack[stack.length - 1];
+                        if (evaluate(lo.c)) { pc = lo.s + 1; } else { stack.pop();
+                            pc++; }
+                        continue;
+                    }
+                    const ig = l.match(/IF\s*\[(.*?)\]\s*GOTO\s*(\d+)/);
+                    if (ig) {
+                        if (evaluate(ig[1])) { const t = 'N' + ig[2]; if (this.bmap[t] !== undefined) { pc = this
+                                    .bmap[t]; continue; } }
+                        pc++; continue;
+                    }
+                    const gom = l.match(/^GOTO\s*(\d+)/);
+                    if (gom) { const t = 'N' + gom[1]; if (this.bmap[t] !== undefined) { pc = this.bmap[t]; continue; }
+                        pc++; continue; }
+                    const as = l.match(/^#(\d+)\s*=\s*(.+)/);
+                    if (as) { vars.set(as[1], evaluate(as[2]));
+                        pc++; continue; }
+                    this._block(l);
+                    this._add();
+                    pc++;
+                }
+            }
+            _pre(l) {
+                let p = l.replace(/#(\d+)/g, (m, n) => vars.get(n));
+                p = p.replace(/\[([^\]]+)\]/g, (m, e) => evaluate(e));
+                return p;
+            }
+            _skip(pc, n) {
+                let d = 1;
+                while (d > 0 && pc < this.lines.length - 1) {
+                    pc++;
+                    const l = this.lines[pc].t;
+                    if (l.match(/WHILE\[.*\]DO(\d+)/) && parseInt(RegExp.$1) === n) d++;
+                    if (l.match(/^END(\d+)/) && parseInt(RegExp.$1) === n) d--;
+                }
+                return pc;
+            }
+            _block(l) {
+                const toks = l.match(/[A-Z][+\-]?\d+(\.\d+)?/g) || [];
+                let t = { ...this.pos };
+                for (const tk of toks) {
+                    const lt = tk[0],
+                        v = parseFloat(tk.substring(1));
+                    switch (lt) {
+                        case 'G':
+                            if (v === 0 || v === 1) this._motion = 'G' + (v === 0 ? '00' : '01');
+                            if (v === 90) this.abs = true;
+                            if (v === 91) this.abs = false;
+                            break;
+                        case 'X':
+                            t.X = this.abs ? v : this.pos.X + v;
+                            break;
+                        case 'Y':
+                            t.Y = this.abs ? v : this.pos.Y + v;
+                            break;
+                        case 'Z':
+                            t.Z = this.abs ? v : this.pos.Z + v;
+                            break;
+                    }
+                }
+                this.pos = t;
+            }
+            _add() {
+                const lp = this.path[this.path.length - 1];
+                if (lp[0] !== this.pos.X || lp[1] !== this.pos.Y || lp[2] !== this.pos.Z) {
+                    this.path.push([this.pos.X, this.pos.Y, this.pos.Z]);
+                }
+            }
+        }
+        const parser = new Parser();
+
+        // THREE.js Simulator
+        let scene, camera, renderer, toolMesh, pathLines = [],
+            stockGroup, isLathe = false;
+
+        function initThree() {
+            const container = document.getElementById('sim-area');
+            const w = container.clientWidth,
+                h = container.clientHeight;
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a1a);
+            camera = new THREE.PerspectiveCamera(50, w / h, 0.5, 500);
+            camera.position.set(30, 20, 35);
+            camera.lookAt(5, 0, 0);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(w, h);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            const al = new THREE.AmbientLight(0x404060);
+            scene.add(al);
+            const dl = new THREE.DirectionalLight(0xffffff, 0.7);
+            dl.position.set(20, 30, 20);
+            scene.add(dl);
+            const gl = new THREE.GridHelper(30, 30, 0x335577, 0x1a3350);
+            scene.add(gl);
+            const wg = new THREE.GridHelper(20, 20, 0x4488aa, 0x224466);
+            wg.position.set(5, 0.01, 0);
+            scene.add(wg);
+
+            // axes
+            const axg = new THREE.Group();
+            [
+                [0xff3333, 'X', [18, 0.3, 0], [18, 0, 0]],
+                [0x33ff33, 'Y', [0, 18, 0], [0, 18, 0]],
+                [0x3388ff, 'Z', [0, 0.3, 18], [0, 0, 18]]
+            ].forEach(([c, l, lp, tp]) => {
+                const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-2, 0, 0), new THREE.Vector3(
+                    ...tp)]);
+                const ln = new THREE.Line(g, new THREE.LineBasicMaterial({ color: c }));
+                axg.add(ln);
+                const cv = document.createElement('canvas');
+                cv.width = 64;
+                cv.height = 64;
+                const ctx = cv.getContext('2d');
+                ctx.fillStyle = '#' + new THREE.Color(c).getHexString();
+                ctx.font = 'bold 48px Arial';
+                ctx.fillText(l, 10, 50);
+                const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv) }));
+                sp.position.set(...lp);
+                sp.scale.set(2, 2, 1);
+                axg.add(sp);
+            });
+            scene.add(axg);
+
+            toolMesh = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), new THREE.MeshPhongMaterial({ color: 0xffff00,
+                emissive: 0x444400 }));
+            scene.add(toolMesh);
+            stockGroup = new THREE.Group();
+            scene.add(stockGroup);
+            createStock();
+            window.addEventListener('resize', () => {
+                const w2 = container.clientWidth,
+                    h2 = container.clientHeight;
+                camera.aspect = w2 / h2;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w2, h2);
+            });
+            // mouse drag
+            let drag = false,
+                prev = { x: 0, y: 0 },
+                th = 0.8,
+                ph = 0.6,
+                dist = 50;
+            renderer.domElement.addEventListener('mousedown', e => { drag = true;
+                prev = { x: e.clientX, y: e.clientY }; });
+            renderer.domElement.addEventListener('mousemove', e => {
+                if (!drag) return;
+                th += (e.clientX - prev.x) * 0.01;
+                ph = Math.max(-1.4, Math.min(1.4, ph + (e.clientY - prev.y) * 0.01));
+                prev = { x: e.clientX, y: e.clientY };
+                updateCam();
+            });
+            renderer.domElement.addEventListener('mouseup', () => drag = false);
+            renderer.domElement.addEventListener('wheel', e => { dist = Math.max(10, Math.min(100, dist + e.deltaY * 0.05));
+                updateCam(); });
+            renderer.domElement.addEventListener('touchstart', e => {
+                if (e.touches.length === 1) { drag = true;
+                    prev = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }
+            });
+            renderer.domElement.addEventListener('touchmove', e => {
+                if (!drag) return;
+                th += (e.touches[0].clientX - prev.x) * 0.01;
+                ph = Math.max(-1.4, Math.min(1.4, ph + (e.touches[0].clientY - prev.y) * 0.01));
+                prev = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                updateCam();
+            });
+            renderer.domElement.addEventListener('touchend', () => drag = false);
+
+            function updateCam() {
+                const x = 5 + dist * Math.cos(ph) * Math.sin(th);
+                const y = dist * Math.sin(ph);
+                const z = dist * Math.cos(ph) * Math.cos(th);
+                camera.position.set(x, y, z);
+                camera.lookAt(5, 0, 0);
+            }
+            updateCam();
+        }
+
+        function createStock() {
+            while (stockGroup.children.length) stockGroup.remove(stockGroup.children[0]);
+            if (isLathe) {
+                const g = new THREE.CylinderGeometry(6, 6, 20, 32);
+                const m = new THREE.MeshPhongMaterial({ color: 0x8899aa, transparent: true, opacity: 0.5,
+                    side: THREE.DoubleSide });
+                const s = new THREE.Mesh(g, m);
+                s.rotation.x = Math.PI / 2;
+                s.position.set(5, 0, 0);
+                stockGroup.add(s);
+                const eg = new THREE.EdgesGeometry(g);
+                const wf = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: 0xaabbcc, transparent: true,
+                    opacity: 0.3 }));
+                wf.rotation.x = Math.PI / 2;
+                wf.position.copy(s.position);
+                stockGroup.add(wf);
+            } else {
+                const g = new THREE.BoxGeometry(24, 4, 18);
+                const m = new THREE.MeshPhongMaterial({ color: 0x8899aa, transparent: true, opacity: 0.5,
+                    side: THREE.DoubleSide });
+                const s = new THREE.Mesh(g, m);
+                s.position.set(7, -2, 0);
+                stockGroup.add(s);
+                const eg = new THREE.EdgesGeometry(g);
+                const wf = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: 0xaabbcc, transparent: true,
+                    opacity: 0.3 }));
+                wf.position.copy(s.position);
+                stockGroup.add(wf);
+            }
+        }
+
+        function updatePath(pts) {
+            pathLines.forEach(l => { if (l) { l.geometry.dispose();
+                    l.material.dispose();
+                    scene.remove(l); } });
+            pathLines = [];
+            if (!pts || pts.length < 2) return;
+            const pos = [];
+            pts.forEach(p => pos.push(p[0], p[1], p[2]));
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2 }));
+            scene.add(l);
+            pathLines.push(l);
+            const lp = pts[pts.length - 1];
+            toolMesh.position.set(lp[0], lp[1], lp[2]);
+            document.getElementById('pos-display').innerHTML =
+                `X:${lp[0].toFixed(3)} Y:${lp[1].toFixed(3)} Z:${lp[2].toFixed(3)}`;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (renderer) renderer.render(scene, camera);
+        }
+
+        // UI
+        function buildKeypad() {
+            const rows = [
+                ['O', 'N', 'G', 'X', 'Y', 'Z', 'F', 'S', 'M'],
+                ['7', '8', '9', 'I', 'J', 'K', '#', 'IF', 'GOTO'],
+                ['4', '5', '6', 'R', 'D', 'H', 'WHILE', 'DO', 'END'],
+                ['1', '2', '3', 'T', 'P', 'Q', 'SIN', 'COS', 'SQRT'],
+                ['0', '.', '-', '[', ']', 'EOB', 'EQ', 'LT', 'GT']
+            ];
+            const kp = document.getElementById('keypad');
+            let html = '';
+            rows.forEach(r => {
+                html += '<div class="krow">';
+                r.forEach(k => {
+                    let cls = 'key';
+                    if (['O', 'N', 'G', 'X', 'Y', 'Z', 'F', 'S', 'M', 'I', 'J', 'K', 'R', 'D', 'H', 'T', 'P', 'Q']
+                        .includes(k)) cls += ' addr';
+                    if (['#', 'IF', 'GOTO', 'WHILE', 'DO', 'END', 'EQ', 'LT', 'GT'].includes(k)) cls += ' macro';
+                    if (['SIN', 'COS', 'SQRT'].includes(k)) cls += ' func';
+                    const d = k === 'EOB' ? ';' : k;
+                    html += `<button class="${cls}" data-k="${k}">${d}</button>`;
+                });
+                html += '</div>';
+            });
+            kp.innerHTML = html;
+            kp.addEventListener('click', e => {
+                const b = e.target.closest('.key');
+                if (!b) return;
+                let v = b.dataset.k;
+                switch (v) {
+                    case 'EOB':
+                        v = ';';
+                        break;
+                    case 'IF':
+                        v = 'IF [';
+                        break;
+                    case 'WHILE':
+                        v = 'WHILE [';
+                        break;
+                    case 'GOTO':
+                        v = 'GOTO ';
+                        break;
+                    case 'SIN':
+                        v = 'SIN [';
+                        break;
+                    case 'COS':
+                        v = 'COS [';
+                        break;
+                    case 'SQRT':
+                        v = 'SQRT [';
+                        break;
+                    case 'EQ':
+                        v = ' EQ ';
+                        break;
+                    case 'LT':
+                        v = ' LT ';
+                        break;
+                    case 'GT':
+                        v = ' GT ';
+                        break;
+                }
+                const ed = document.getElementById('editor');
+                const s = ed.selectionStart;
+                ed.value = ed.value.substring(0, s) + v + ed.value.substring(ed.selectionEnd);
+                ed.selectionStart = ed.selectionEnd = s + v.length;
+                ed.focus();
+            });
+        }
+
+        function run() {
+            const code = document.getElementById('editor').value;
+            document.getElementById('st').textContent = 'İşleniyor...';
+            try {
+                vars.reset();
+                const tp = parser.parse(code);
+                updatePath(tp);
+                document.getElementById('sl').textContent = tp.length;
+                const av = vars.all();
+                const ks = Object.keys(av);
+                document.getElementById('sv').textContent = ks.length ? ks.slice(0, 2).map(k => k + '=' + av[k].toFixed(
+                    2)).join(', ') : '-';
+                document.getElementById('st').textContent = 'Tamamlandı';
+                bus.emit('done', tp);
+            } catch (e) {
+                document.getElementById('st').textContent = 'HATA: ' + e.message;
+            }
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            buildKeypad();
+            initThree();
+            animate();
+
+            document.querySelectorAll('.mode-btn').forEach(b => {
+                b.addEventListener('click', () => {
+                    document.querySelectorAll('.mode-btn').forEach(x => x.classList.remove(
+                        'active'));
+                    b.classList.add('active');
+                    isLathe = b.dataset.mode === 'lathe';
+                    createStock();
+                    updatePath([
+                        [0, 0, 0]
+                    ]);
+                    document.getElementById('active-gcode').textContent = isLathe ?
+                        'G18 G54 G90 (TORNA)' : 'G17 G54 G90 (FREZE)';
+                });
+            });
+
+            document.getElementById('btn-run').addEventListener('click', run);
+            document.getElementById('btn-stop').addEventListener('click', () => {
+                document.getElementById('st').textContent = 'Durduruldu';
+            });
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                updatePath([
+                    [0, 0, 0]
+                ]);
+                vars.reset();
+                document.getElementById('st').textContent = 'Sıfırlandı';
+                document.getElementById('sl').textContent = '0';
+                document.getElementById('sv').textContent = '-';
+            });
+            document.getElementById('btn-load').addEventListener('click', () => document.getElementById('file-up')
+                .click());
+            document.getElementById('file-up').addEventListener('change', e => {
+                const f = e.target.files[0];
+                if (!f) return;
+                const r = new FileReader();
+                r.onload = ev => { document.getElementById('editor').value = ev.target.result; };
+                r.readAsText(f);
+            });
+
+            // Drag & drop
+            const ed = document.getElementById('editor');
+            ed.addEventListener('dragover', e => { e.preventDefault();
+                ed.style.borderColor = '#27ae60'; });
+            ed.addEventListener('dragleave', () => ed.style.borderColor = '#34495e');
+            ed.addEventListener('drop', e => {
+                e.preventDefault();
+                ed.style.borderColor = '#34495e';
+                const f = e.dataTransfer.files[0];
+                if (f) {
+                    const r = new FileReader();
+                    r.onload = ev => { ed.value = ev.target.result; };
+                    r.readAsText(f);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
